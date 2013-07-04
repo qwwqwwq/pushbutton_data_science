@@ -39,7 +39,6 @@ class TrainTestDataset:
 	self.load_testing_data(test)
 	self.normalize_datasets()
 	self.create_mapper()
-
 	
     def coerce(self, series1, series2 ):
 	"""
@@ -56,26 +55,36 @@ class TrainTestDataset:
 	    self.logger.info("Converting column (%s) in test from (%s) to (%s)." % (series2.name, series2.dtype, series1.dtype ) )
 	    series2 = series2.astype(series1.dtype)
 	return (series1, series2)
+
     def can_coerce(self, from_type, to_type):
 	if to_type in self.coercion_matrix.get(from_type, set()):
 	    return True
+
     def can_implicit_coerce(self, data_type):
 	if data_type in self.implicit_coercion_matrix:
 	    return True
+
     def implicit_coerce(self, series):
 	return series.astype(self.implicit_coercion_matrix[series.dtype])
+
     def load_training_data(self, fn):
 	self.logger.info("Begin loading training data from %s" % fn )
 	self.train = pandas.io.parsers.read_table(fn, delim_whitespace=True, keep_default_na = True, na_values = ['NA'])
 	self.logger.info("Finished loading training data from %s" % fn )
 	data_type_summary = Counter( [ self.train[k].dtype for k in self.train.keys() ] )
 	self.logger.info("Summary of training data types:\n\t%s" % data_type_summary )
+	target_name = None
+	while target_name not in self.train.keys():
+	    target_name = raw_input("Which column is the variable to predict? ")
+	self.training_target = self.train[target_name]
+
     def load_testing_data(self, fn):
 	self.logger.info("Begin loading testing data from %s" % fn )
 	self.test = pandas.io.parsers.read_table(fn, delim_whitespace=True, keep_default_na = True, na_values = ['NA'])
 	self.logger.info("Finished loading testing data from %s, rows: (%s), columns: (%s)" % (fn, self.test.shape[0], self.test.shape[1] ) )
 	data_type_summary = Counter( [ self.test[k].dtype for k in self.test.keys() ] )
 	self.logger.info("Summary of testing data types:\n\t%s" % data_type_summary )
+
     def normalize_datasets(self):
 	columns_to_remove_train = set(self.train.keys()) - set(self.test.keys())
 	columns_to_remove_test = set(self.test.keys()) - set(self.train.keys())
@@ -128,7 +137,7 @@ class TrainTestDataset:
     def cv(self):
 	for name, pipe in self.pipes.iteritems():
 	    self.logger.info("Conducting cross-validation with model (%s)." % name )
-	    scores = sklearn_pandas.cross_val_score(pipe, self.train, self.train.votes, sklearn.metrics.mean_squared_error)
+	    scores = sklearn_pandas.cross_val_score(pipe, self.train, self.training_target, sklearn.metrics.mean_squared_error)
 	    self.logger.info("Accuracy for (%s): %0.2f (+/- %0.2f)" % (name, scores.mean(), scores.std() / 2))
 	    self.cv_scores[name] = scores.mean()
 
@@ -137,6 +146,6 @@ class TrainTestDataset:
 	name = sorted(self.cv_scores.items(), key = lambda x: x[1])[0][0]
 	best_pipe = self.pipes[name]
 	self.logger.info("Training top model (%s) on (%s) datapoints." % (name, self.train.shape[0]))
-	best_pipe.fit(self.train, self.train.votes)
+	best_pipe.fit(self.train, self.training_target)
 	self.logger.info("Using top model (%s) to predict (%s) datapoints." % (name, self.test.shape[0]))
 	self.prediction = best_pipe.predict(self.test)
