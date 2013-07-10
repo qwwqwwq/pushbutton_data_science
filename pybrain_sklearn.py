@@ -11,28 +11,35 @@ from sklearn.base import BaseEstimator
 from pybrain.supervised.trainers import BackpropTrainer
 
 class PybrainNN(BaseEstimator):
-    def __init__(self, hidden_layers = (5,5), copy_X = True, max_epochs = 100):
+    def __init__(self, hidden_layers = (5,5), copy_X = True, max_epochs = 100, trainer_class = BackpropTrainer):
 	self.hidden_layers = hidden_layers
 	self.max_epochs = max_epochs
 	self.copy_X = copy_X
-	self.trainer_class = BackpropTrainer
+	self.trainer_class = trainer_class
 
-    def fit(X, y):
-	self.shape = ( X.shape[1], y.shape[1] )
-	self.network = buildNetwork( self.shape[0], *hidden_layers, self.shape[1])
+    def fit(self, X, y):
+	try:
+	    self.shape = ( X.shape[1], y.shape[1] )
+	except IndexError:
+	    self.shape = ( X.shape[1], 1 )
+	structure = list(self.hidden_layers[:])
+	structure.append(self.shape[1])
+	structure.insert(0, self.shape[0])
+	print "structure is ", structure
+	self.network = buildNetwork( *tuple(structure) )
 	self.ds = SupervisedDataSet( *self.shape )
 	for idx, r in enumerate(X):
-	    ds.addSample(r, y[idx])
+	    self.ds.addSample(r, y[idx])
 	self.trainer = self.trainer_class(self.network, self.ds)
 	self.trainer.trainUntilConvergence( maxEpochs = self.max_epochs )
 
-    def decision_function(X):
+    def decision_function(self, X):
 	assert X.shape[1] == self.shape[0]
 	ds = SupervisedDataSet( *self.shape )
 	for r in X:
 	    ds.addSample(r, 0)
 	return self.network.activateOnDataset(ds)
 
-    def predict(X):
+    def predict(self, X):
 	return self.decision_function(X)
 

@@ -1,5 +1,6 @@
 import sklearn, sklearn.pipeline, sklearn.linear_model, sklearn.svm, sklearn.metrics
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.preprocessing import StandardScaler, LabelEncoder, Normalizer, LabelBinarizer
+from sklearn.feature_selection import SelectKBest, RFECV
 import math
 import numpy as np
 import sys
@@ -9,7 +10,28 @@ import pandas
 import sklearn_pandas
 import logging
 import numpy as np
+import scipy.stats
 from collections import Counter
+from Rank_Scaler import RankScaler
+from flexible_feature_selector import flexible_scoring_function
+
+def is_normal(x):
+    """
+    Use shapiro test with alpha = 0.05 to test normality of sample
+    """
+    shaprio_results = scipy.stats.shapiro(x)
+    if x[1] <= 0.05: return True
+
+def is_discrete(x):
+    """
+    Determine if a data series appears to be discrete, based on proportion of unique values.
+
+    If the number of unique values is <= 5% of the number of observations, this will return True.
+    """
+    if x.dtype == np.dtype(object): return True
+##TODO:
+    #nclasses = len(Counter(x))
+    #if nclasses <= (len(x)/20) and nclasses <= 10: return True
 
 class TrainTestDataset:
     """
@@ -19,21 +41,21 @@ class TrainTestDataset:
     coercion_matrix = {np.dtype(np.int64) : frozenset([np.dtype(np.float64)]) }
     preprocessing_matrix = { np.dtype(np.int64) : None, 
 			     np.dtype(np.float64) : StandardScaler,
-			     np.dtype(object) : LabelEncoder }
-    acceptable_dtypes = { np.dtype(np.float64) : True }
+			     np.dtype(object) : LabelEncoder}
+    acceptable_dtypes = { np.dtype(np.float64) : True, np.dtype(object) : True }
     pipes = dict()
     cv_scores = dict()
 
     def __init__(self, train, test):
 	##set up logging
 	self.logger = logging.getLogger()
+	self.logger.handlers = []
 	self.logger.setLevel(logging.INFO)
 	ih = logging.StreamHandler()
 	ih.setLevel(logging.INFO)
 	formatter_lite = logging.Formatter('%(asctime)s - %(message)s')
 	ih.setFormatter(formatter_lite)
 	self.logger.addHandler(ih)
-
 
 	self.load_training_data(train)
 	self.load_testing_data(test)
@@ -125,13 +147,30 @@ class TrainTestDataset:
 	self.logger.info("Summary of combined dataset types:\n\t%s" % data_type_summary )
 
     def create_mapper(self):
-	preprocessing_mapping = [ (name, self.preprocessing_matrix[data_type]()) for name, data_type in self.common_columns.items() if data_type in self.acceptable_dtypes ]
-	self.mapper = sklearn_pandas.DataFrameMapper(preprocessing_mapping)
+	self.preprocessing_mapping = []
+	for name, data_type in self.common_columns.items():
+	    if data_type not in self.acceptable_dtypes: continue
+	    series = self.train[name]
+	    if len(Counter(series)) <= 1: continue ##non informative features excluded
+	    if is_discrete(series):
+		self.logger.info("Feature (%s) classified as discrete with (%s) levels, levels are:\n%s" % (name, series.nunique(), series.unique()) )
+		self.preprocessing_mapping.append( (name, LabelBinarizer()) )
+	    else:
+		self.logger.info("Feature (%s) classified as continuous with mean (%s) and variance (%s)." % (name, series.mean(), series.var()) )
+		if is_normal(series):
+		    self.preprocessing_mapping.append( (name, StandardScaler() ) )
+		else:
+		    self.preprocessing_mapping.append( (name, RankScaler()) )
+	self.mapper = sklearn_pandas.DataFrameMapper(self.preprocessing_mapping)
 	self.mapper.fit(self.train)
+	self.feature_selector = SelectKBest(score_func = flexible_scoring_function)
+	self.feature_selector.fit(self.mapper.transform(self.train), self.training_target )
+	print self.feature_selector.get_support(indices = True )
 
     def add_model(self, model):	
 	self.pipes[str(model)] = sklearn.pipeline.Pipeline([
 	('featurize', self.mapper),
+	('select', self.feature_selector),
 	('m', model)])
 
     def cv(self):
@@ -140,6 +179,7 @@ class TrainTestDataset:
 	    scores = sklearn_pandas.cross_val_score(pipe, self.train, self.training_target, sklearn.metrics.mean_squared_error)
 	    self.logger.info("Accuracy for (%s): %0.2f (+/- %0.2f)" % (name, scores.mean(), scores.std() / 2))
 	    self.cv_scores[name] = scores.mean()
+	    print self.feature_selector.get_support(indices=True)
 
     def predict_best(self):
 	self.cv()
