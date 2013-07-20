@@ -5,15 +5,25 @@ import math
 import numpy as np
 import sys
 import random
-import pickle
 import pandas
-import sklearn_pandas
+import pickle
+from sklearn_pandas_JQ import *
 import logging
 import numpy as np
 import scipy.stats
 from collections import Counter
 from Rank_Scaler import RankScaler
 from flexible_feature_selector import flexible_scoring_function
+import mrjob
+from mrjob.job import MRJob
+
+def H_ratio(x):
+    H = 0
+    c = Counter(x)
+    total = len(x)
+    for item, counts in c.iteritems():
+	H += -1*( math.log( counts / float(total) ) * ( counts / float(total) ))
+    return H/math.log(total)
 
 def is_normal(x):
     """
@@ -32,6 +42,21 @@ def is_discrete(x):
 ##TODO:
     #nclasses = len(Counter(x))
     #if nclasses <= (len(x)/20) and nclasses <= 10: return True
+
+class ModelCVRunner(MRJob):
+    INPUT_PROTOCOL = mrjob.protocol.PickleProtocol
+    INTERNAL_PROTOCOL = mrjob.protocol.PickleProtocol
+    OUTPUT_PROTOCOL = mrjob.protocol.PickleProtocol
+
+    def __init__(self, data, models):
+	self.models = models
+	self.data = data
+    def mapper(self, k, v):
+	yield k, v
+    def reducer(self, k, v):
+	pickle.loads(v)
+	scores = cross_val_score(p.pipe, p.data, p.training_target, sklearn.metrics.mean_squared_error)
+	yield k, scores
 
 class TrainTestDataset:
     """
@@ -56,6 +81,7 @@ class TrainTestDataset:
 	formatter_lite = logging.Formatter('%(asctime)s - %(message)s')
 	ih.setFormatter(formatter_lite)
 	self.logger.addHandler(ih)
+	self.H_ratio_max = 0.50
 
 	self.load_training_data(train)
 	self.load_testing_data(test)
@@ -153,6 +179,10 @@ class TrainTestDataset:
 	    series = self.train[name]
 	    if len(Counter(series)) <= 1: continue ##non informative features excluded
 	    if is_discrete(series):
+		if len(Counter(series)) == len(series): continue ##non informative features excluded
+		if H_ratio(series) > self.H_ratio_max: 
+		    print name, "excluded to to H_ratio", H_ratio(series)
+		    continue
 		self.logger.info("Feature (%s) classified as discrete with (%s) levels, levels are:\n%s" % (name, series.nunique(), series.unique()) )
 		self.preprocessing_mapping.append( (name, LabelBinarizer()) )
 	    else:
@@ -161,11 +191,13 @@ class TrainTestDataset:
 		    self.preprocessing_mapping.append( (name, StandardScaler() ) )
 		else:
 		    self.preprocessing_mapping.append( (name, RankScaler()) )
-	self.mapper = sklearn_pandas.DataFrameMapper(self.preprocessing_mapping)
+	self.mapper = DataFrameMapper(self.preprocessing_mapping)
 	self.mapper.fit(self.train)
 	self.feature_selector = SelectKBest(score_func = flexible_scoring_function)
 	self.feature_selector.fit(self.mapper.transform(self.train), self.training_target )
-	print self.feature_selector.get_support(indices = True )
+	for idx in self.feature_selector.get_support(indices = True ):
+	    print self.mapper.index_to_name[idx]
+	print self.mapper.index_to_name
 
     def add_model(self, model):	
 	self.pipes[str(model)] = sklearn.pipeline.Pipeline([
@@ -176,7 +208,7 @@ class TrainTestDataset:
     def cv(self):
 	for name, pipe in self.pipes.iteritems():
 	    self.logger.info("Conducting cross-validation with model (%s)." % name )
-	    scores = sklearn_pandas.cross_val_score(pipe, self.train, self.training_target, sklearn.metrics.mean_squared_error)
+	    scores = cross_val_score(pipe, self.train, self.training_target, sklearn.metrics.mean_squared_error)
 	    self.logger.info("Accuracy for (%s): %0.2f (+/- %0.2f)" % (name, scores.mean(), scores.std() / 2))
 	    self.cv_scores[name] = scores.mean()
 	    print self.feature_selector.get_support(indices=True)
