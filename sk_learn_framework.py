@@ -18,6 +18,13 @@ import mrjob
 from mrjob.job import MRJob
 
 def H_ratio(x):
+    """
+    This metric is the ratio of the entropy of oberved sequence over the maximal entropy of a
+    sequence of the same length. Can be thought of as the divergence of the observed sequence
+    from the uniform distribution. The reason for this metric is to have a consistant way to
+    define a sequence which is close to uniform. Variables that are close to uniform over the training
+    data should be pruned from the model.
+    """
     H = 0
     c = Counter(x)
     total = len(x)
@@ -39,24 +46,8 @@ def is_discrete(x):
     If the number of unique values is <= 5% of the number of observations, this will return True.
     """
     if x.dtype == np.dtype(object): return True
-##TODO:
-    #nclasses = len(Counter(x))
-    #if nclasses <= (len(x)/20) and nclasses <= 10: return True
-
-class ModelCVRunner(MRJob):
-    INPUT_PROTOCOL = mrjob.protocol.PickleProtocol
-    INTERNAL_PROTOCOL = mrjob.protocol.PickleProtocol
-    OUTPUT_PROTOCOL = mrjob.protocol.PickleProtocol
-
-    def __init__(self, data, models):
-	self.models = models
-	self.data = data
-    def mapper(self, k, v):
-	yield k, v
-    def reducer(self, k, v):
-	pickle.loads(v)
-	scores = cross_val_score(p.pipe, p.data, p.training_target, sklearn.metrics.mean_squared_error)
-	yield k, scores
+    nclasses = len(Counter(x))
+    if nclasses <= (len(x)/20): return True
 
 class TrainTestDataset:
     """
@@ -71,7 +62,7 @@ class TrainTestDataset:
     pipes = dict()
     cv_scores = dict()
 
-    def __init__(self, train, test):
+    def __init__(self, train, test=None, Kfeats =5):
 	##set up logging
 	self.logger = logging.getLogger()
 	self.logger.handlers = []
@@ -82,10 +73,16 @@ class TrainTestDataset:
 	ih.setFormatter(formatter_lite)
 	self.logger.addHandler(ih)
 	self.H_ratio_max = 0.50
+	self.common_columns = None
+	self.Kfeats = Kfeats
+	self.excluded_features = set()
 
 	self.load_training_data(train)
-	self.load_testing_data(test)
-	self.normalize_datasets()
+	if test:
+	    self.load_testing_data(test)
+	    self.normalize_datasets()
+	else:
+	    self.test = None
 	self.create_mapper()
 	
     def coerce(self, series1, series2 ):
@@ -117,7 +114,7 @@ class TrainTestDataset:
 
     def load_training_data(self, fn):
 	self.logger.info("Begin loading training data from %s" % fn )
-	self.train = pandas.io.parsers.read_table(fn, delim_whitespace=True, keep_default_na = True, na_values = ['NA'])
+	self.train = self.clean_data(pandas.io.parsers.read_table(fn, delim_whitespace=True, keep_default_na = True, na_values = ['NA']))
 	self.logger.info("Finished loading training data from %s" % fn )
 	data_type_summary = Counter( [ self.train[k].dtype for k in self.train.keys() ] )
 	self.logger.info("Summary of training data types:\n\t%s" % data_type_summary )
@@ -125,55 +122,50 @@ class TrainTestDataset:
 	while target_name not in self.train.keys():
 	    target_name = raw_input("Which column is the variable to predict? ")
 	self.training_target = self.train[target_name]
+	self.logger.info("")
 
     def load_testing_data(self, fn):
 	self.logger.info("Begin loading testing data from %s" % fn )
-	self.test = pandas.io.parsers.read_table(fn, delim_whitespace=True, keep_default_na = True, na_values = ['NA'])
+	self.test = self.clean_data(pandas.io.parsers.read_table(fn, delim_whitespace=True, keep_default_na = True, na_values = ['NA']))
 	self.logger.info("Finished loading testing data from %s, rows: (%s), columns: (%s)" % (fn, self.test.shape[0], self.test.shape[1] ) )
 	data_type_summary = Counter( [ self.test[k].dtype for k in self.test.keys() ] )
 	self.logger.info("Summary of testing data types:\n\t%s" % data_type_summary )
 
+    def clean_data(self, df):
+	"""
+	Impute NA values, remove unwanted data types.
+	"""
+	for feature in df.keys():
+	    if self.can_implicit_coerce(df[feature].dtype):
+		df[feature] = self.implicit_coerce(df[feature])
+	    if df[feature].dtype not in self.acceptable_dtypes: 
+		self.excluded_features.add(feature)
+	    if df[feature].isnull().any():
+		self.logger.info("Feature (%s) dtype (%s) in test has NAs, will fill in with mean (%s)." % ( feature, df[feature].dtype, df[feature].mean() ) )
+		df[feature] = df[feature].fillna(df[feature].mean())
+		if df[feature].isnull().any(): 
+		    self.logger.info("Feature (%s) in test was unable to be imputed." % feature )
+		    self.excluded_features.add(feature)
+	return df
+
     def normalize_datasets(self):
-	columns_to_remove_train = set(self.train.keys()) - set(self.test.keys())
-	columns_to_remove_test = set(self.test.keys()) - set(self.train.keys())
-	common_columns =  set(self.test.keys()) & set(self.train.keys())
+	common_columns = set(self.test.keys()) & set(self.train.keys())
 	for column in common_columns:
 	    if self.train[column].dtype != self.test[column].dtype:
 		self.train[column], self.test[column] = self.coerce(self.train[column], self.test[column] )
 	    if self.train[column].dtype != self.test[column].dtype:
 		self.logger.info("Column (%s) dtype (%s) in train != dtype (%s) in test, will remove." % (column,  self.test[column].dtype, self.train[column].dtype ) )
-		columns_to_remove_train.add(column)
-		columns_to_remove_test.add(column)
-	    elif self.train[column].dtype == self.test[column].dtype and \
-		    self.can_implicit_coerce(self.train[column].dtype):
-		self.train[column] = self.implicit_coerce(self.train[column])
-		self.test[column] = self.implicit_coerce(self.test[column])
-	    if self.test[column].isnull().any():
-		self.logger.info("Column (%s) dtype (%s) in test has NAs, will fill in with mean (%s)." % ( column, self.test[column].dtype, self.train[column].mean() ) )
-		self.test[column] = self.test[column].fillna(self.test[column].mean())
-		if self.test[column].isnull().any(): 
-		    self.logger.info("Column (%s) in test was unable to be imputed." % column )
-		    columns_to_remove_test.add(column)
-	    if self.train[column].isnull().any():
-		self.logger.info("Column (%s) dtype (%s) in train has NAs, will fill in with mean (%s)." % ( column, self.train[column].dtype, self.test[column].mean() ) )
-		self.train[column] = self.train[column].fillna(self.train[column].mean())
-		if self.train[column].isnull().any():
-		    self.logger.info("Column (%s) in train was unable to be imputed." % column )
-		    columns_to_remove_train.add(column)
-	    if self.train[column].dtype not in self.acceptable_dtypes: columns_to_remove_train.add(column)
-	    if self.test[column].dtype not in self.acceptable_dtypes: columns_to_remove_test.add(column)
-	self.logger.info("Removed %s columns from training data not present in test data." % len(columns_to_remove_train) )
-	self.logger.info("Removed %s columns from test data not present in training data." % len(columns_to_remove_test) )
-	common_columns_names = (set(self.test.keys())-set(columns_to_remove_test)) & (set(self.train.keys())-set(columns_to_remove_train) )
-	assert not len(set(columns_to_remove_test) & common_columns_names )
-	assert not len(set(columns_to_remove_train) & common_columns_names )
-	self.common_columns = dict( [(name, self.train[name].dtype) for name in common_columns_names ] )
+		self.excluded_features.add(column)
+	usable_features = (self.test.keys() & set(self.train.keys())-self.excluded_features)
+	self.common_columns = dict( [(name, self.train[name].dtype) for name in usable_features ] )
 	self.logger.info("%s common features will be used." % len(self.common_columns) )
 	data_type_summary = Counter( self.common_columns.values() )
 	self.logger.info("Summary of combined dataset types:\n\t%s" % data_type_summary )
 
     def create_mapper(self):
 	self.preprocessing_mapping = []
+	if not self.common_columns and not self.test:
+	    self.common_columns = { name:self.train[name].dtype for name in self.train.keys() }
 	for name, data_type in self.common_columns.items():
 	    if data_type not in self.acceptable_dtypes: continue
 	    series = self.train[name]
@@ -188,16 +180,17 @@ class TrainTestDataset:
 	    else:
 		self.logger.info("Feature (%s) classified as continuous with mean (%s) and variance (%s)." % (name, series.mean(), series.var()) )
 		if is_normal(series):
+		    self.logger.info("Feature (%s) normal by shapiro test." % (name) )
 		    self.preprocessing_mapping.append( (name, StandardScaler() ) )
 		else:
+		    self.logger.info("Feature (%s) cannot be proved normal by shapiro test." % (name) )
 		    self.preprocessing_mapping.append( (name, RankScaler()) )
 	self.mapper = DataFrameMapper(self.preprocessing_mapping)
 	self.mapper.fit(self.train)
-	self.feature_selector = SelectKBest(score_func = flexible_scoring_function)
+	self.feature_selector = SelectKBest(score_func = flexible_scoring_function, k = self.Kfeats)
 	self.feature_selector.fit(self.mapper.transform(self.train), self.training_target )
-	for idx in self.feature_selector.get_support(indices = True ):
-	    print self.mapper.index_to_name[idx]
-	print self.mapper.index_to_name
+	selected_feats = [ self.mapper.index_to_name[idx] for idx in self.feature_selector.get_support(indices = True ) ]
+	self.logger.info("The following features have been selected: %s" % ( ', '.join(selected_feats) ) )
 
     def add_model(self, model):	
 	self.pipes[str(model)] = sklearn.pipeline.Pipeline([
@@ -211,7 +204,6 @@ class TrainTestDataset:
 	    scores = cross_val_score(pipe, self.train, self.training_target, sklearn.metrics.mean_squared_error)
 	    self.logger.info("Accuracy for (%s): %0.2f (+/- %0.2f)" % (name, scores.mean(), scores.std() / 2))
 	    self.cv_scores[name] = scores.mean()
-	    print self.feature_selector.get_support(indices=True)
 
     def predict_best(self):
 	self.cv()
@@ -221,3 +213,4 @@ class TrainTestDataset:
 	best_pipe.fit(self.train, self.training_target)
 	self.logger.info("Using top model (%s) to predict (%s) datapoints." % (name, self.test.shape[0]))
 	self.prediction = best_pipe.predict(self.test)
+

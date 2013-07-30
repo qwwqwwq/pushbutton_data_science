@@ -25,7 +25,6 @@ class PybrainNN(BaseEstimator):
 	structure = list(self.hidden_layers[:])
 	structure.append(self.shape[1])
 	structure.insert(0, self.shape[0])
-	print "structure is ", structure
 	self.network = buildNetwork( *tuple(structure) )
 	self.ds = SupervisedDataSet( *self.shape )
 	for idx, r in enumerate(X):

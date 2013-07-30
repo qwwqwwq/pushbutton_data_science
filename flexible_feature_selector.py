@@ -1,17 +1,5 @@
 from sklearn.feature_selection import *
 import numpy as np
-x = [[ 0,    0,    1,    0.01],
- [ 0,    0,    1,    0.15],
- [ 2,    0,    0,    0.29],
- [ 0,    1,    0,    0.43],
- [ 2,    0,    0,    0.58],
- [ 0,    0,    1,    0.72],
- [ 0,    0,    1,    0.86],
- [ 0,    1,    0,    1  ]]
-x = np.array(x)
-
-y = np.array([1,0,1,0,1,0,1,1])
-
 
 def detect_type(a):
     uniq = np.unique(a)
@@ -39,9 +27,4 @@ def flexible_scoring_function(X, y):
 	stats =  scoring_map[data_types[idx]](feature, y) 
 	output_scores = np.append(output_scores, stats[0])
 	output_P = np.append(output_P, stats[1])
-    print sorted([x for x in enumerate(1/output_P)], key = lambda x: x[1], reverse = True )[:10]
     return 1/output_P, output_P
-  
-
-
-#flexible_scoring_function(x, y)
