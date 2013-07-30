@@ -59,7 +59,7 @@ class DataFrameMapper(BaseEstimator, TransformerMixin):
 		fea = transformer.transform(X[column])
 		if len(fea.shape) == 2:
 		    for i in range(fea.shape[1]):
-			self.index_to_name[len(self.index_to_name)] = column
+			self.index_to_name[len(self.index_to_name)] = column+'_DUMMY_'+str(i)
 		else:
 		    self.index_to_name[len(self.index_to_name)] = column
 		if hasattr(fea, "toarray"):

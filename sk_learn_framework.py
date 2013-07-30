@@ -14,8 +14,6 @@ import scipy.stats
 from collections import Counter
 from Rank_Scaler import RankScaler
 from flexible_feature_selector import flexible_scoring_function
-import mrjob
-from mrjob.job import MRJob
 
 def H_ratio(x):
     """
@@ -122,7 +120,6 @@ class TrainTestDataset:
 	while target_name not in self.train.keys():
 	    target_name = raw_input("Which column is the variable to predict? ")
 	self.training_target = self.train[target_name]
-	self.logger.info("")
 
     def load_testing_data(self, fn):
 	self.logger.info("Begin loading testing data from %s" % fn )
@@ -173,7 +170,7 @@ class TrainTestDataset:
 	    if is_discrete(series):
 		if len(Counter(series)) == len(series): continue ##non informative features excluded
 		if H_ratio(series) > self.H_ratio_max: 
-		    print name, "excluded to to H_ratio", H_ratio(series)
+		    print name, "excluded due to H_ratio", H_ratio(series)
 		    continue
 		self.logger.info("Feature (%s) classified as discrete with (%s) levels, levels are:\n%s" % (name, series.nunique(), series.unique()) )
 		self.preprocessing_mapping.append( (name, LabelBinarizer()) )
