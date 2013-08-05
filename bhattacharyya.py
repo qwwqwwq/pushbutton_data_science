@@ -5,6 +5,8 @@ from collections import Counter, defaultdict
 from scipy.stats import gaussian_kde
 from scipy.integrate import quad
 from scipy import Inf
+import numpy as np
+from numpy.linalg import LinAlgError
 
 def are_mixable(v1,v2):
     """
@@ -42,12 +44,15 @@ def bc_continuous(d1, d2):
     Returns:
 	bc metric (float)
     """
-    a = gaussian_kde(d1)
-    b = gaussian_kde(d2)
-    bc, err = quad( lambda x: math.sqrt(a(x) * b(x)), -Inf, Inf)
-    if bc != 0.0:
+    d1=d1.dropna()
+    d2=d2.dropna()
+    if not len(d1) or not len(d2): return 0.0
+    try:
+	a = gaussian_kde(d1)
+	b = gaussian_kde(d2)
+	bc, err = quad( lambda x: math.sqrt(a(x) * b(x)), -Inf, Inf)
 	return -1*math.log(bc)
-    else:
+    except LinAlgError, ZeroDivisonError:
 	return None
 
 def bc_discrete(count1, count2):
@@ -76,6 +81,7 @@ def bc_discrete_map(count1, count2, map):
     Returns:
 	bc statistic (float)
     """
+    print map
     metric = 0
     for key in count1.keys():
 	key2 = map[key]
@@ -113,12 +119,11 @@ def bc_discrete_best(v1,v2):
     else:
 	largest = count2
 	smallest = count1
-    min_m = None
-    for p in permutations(largest.keys()):
-	pairing = dict(izip_longest(p, smallest.keys(), fillvalue = None ))
-	m = bc_discrete_map(largest, smallest, pairing)
-	if m < min_m or min_m == None: min_m = m; min_p = pairing
-    return min_m, min_p
+    pairing = dict(izip_longest([x[0] for x in sorted(largest.items(), key = lambda x: x[1])], 
+				[x[0] for x in sorted(smallest.items(), key = lambda x: x[1])], 
+				fillvalue = None ))
+    m = bc_discrete_map(largest, smallest, pairing)
+    return m, pairing
 
 def best_mapping(a,b):
     """
