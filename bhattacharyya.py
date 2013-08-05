@@ -1,5 +1,6 @@
 import math
 import random
+import re
 from itertools import permutations, izip_longest
 from collections import Counter, defaultdict
 from scipy.stats import gaussian_kde
@@ -81,7 +82,6 @@ def bc_discrete_map(count1, count2, map):
     Returns:
 	bc statistic (float)
     """
-    print map
     metric = 0
     for key in count1.keys():
 	key2 = map[key]
@@ -116,14 +116,21 @@ def bc_discrete_best(v1,v2):
     if len(count1) > len(count2):
 	largest = count1
 	smallest = count2
+	c1_first = True
     else:
 	largest = count2
 	smallest = count1
-    pairing = dict(izip_longest([x[0] for x in sorted(largest.items(), key = lambda x: x[1])], 
-				[x[0] for x in sorted(smallest.items(), key = lambda x: x[1])], 
+	c1_first = False
+    pairing = dict(izip_longest([x[0] for x in sorted(largest.items(), key = lambda x: -x[1])], 
+				[x[0] for x in sorted(smallest.items(), key = lambda x: -x[1])], 
 				fillvalue = None ))
     m = bc_discrete_map(largest, smallest, pairing)
-    return m, pairing
+    inv_pairing = {v:k for k, v in pairing.items()}
+    if c1_first:
+	return m, inv_pairing
+    else:
+	return m, pairing
+
 
 def best_mapping(a,b):
     """
