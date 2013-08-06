@@ -14,8 +14,8 @@ def are_mixable(v1,v2):
     Input:
 	v1,v2: Two dataseries
     Output: 
-	    bool, True if the discrete labels are compatible between the Series.
-	"""
+	bool, True if the discrete labels are compatible between the Series.
+    """
     if set(v1).issubset(v2) or set(v2).issubset(v1): return True
     else: return False
 
@@ -31,10 +31,6 @@ def is_discrete(x):
 	if x.dtype == np.dtype(object): return True
     except:
 	pass
-    try:
-	[ float(i) for i in x ]
-    except ValueError:
-	return True
     nclasses = len(Counter(x))
     if nclasses-1 <= (len(x)/20)+1: return True
 
@@ -54,7 +50,7 @@ def bc_continuous(d1, d2):
 	bc, err = quad( lambda x: math.sqrt(a(x) * b(x)), -Inf, Inf)
 	return -1*math.log(bc)
     except LinAlgError, ZeroDivisonError:
-	return None
+	return Inf
 
 def bc_discrete(count1, count2):
     keys = set(count1.keys()).union( set(count2.keys()) )
@@ -71,7 +67,7 @@ def bc_discrete(count1, count2):
 	metric += math.sqrt( p*q )
     if metric != 0.0:
 	return -1*math.log(metric)
-    else: return None
+    else: return Inf
 
 def bc_discrete_map(count1, count2, map):
     """
@@ -96,7 +92,7 @@ def bc_discrete_map(count1, count2, map):
 	metric += math.sqrt( p*q )
     if metric != 0.0:
 	return -1*math.log(metric)
-    else: return None
+    else: return Inf
 
 def bc_discrete_best(v1,v2):
     """
@@ -152,16 +148,27 @@ def best_mapping(a,b):
 	    elif is_discrete(v1) and is_discrete(v2):
 		d[k1][k2] = bc_discrete_best(v1,v2)
     output = {}
+    min_scores_d2_vars = defaultdict(lambda: Inf)
+    min_scores_d1_vars = defaultdict(lambda: Inf)
     mappers = {}
-    for key in c:
-	name = min(c[key].items(), key = lambda x: x[1])[0]
-	output[name] = key
-    for key in d:
-	top = min(d[key].items(), key = lambda x: x[1][0])
-	name = top[0]
+    for k1 in c:
+	print k1
+	k2, metric = min(c[k1].items(), key = lambda x: x[1])
+	print k2
+	print c[k1].items()
+	if metric < min_scores_d2_vars[k2] and metric < min_scores_d1_vars[k1]:
+	    output[k2] = k1
+	    min_scores_d2_vars[k2] = metric
+	    min_scores_d1_vars[k1] = metric
+    for k1 in d:
+	top = min(d[k1].items(), key = lambda x: x[1][0])
+	k2 = top[0]
 	mapper = top[1][1]
-	output[name] = key
-	mappers[name] = mapper
+	if metric < min_scores_d2_vars[k2] and metric < min_scores_d1_vars[k1]:
+	    output[k2] = k1
+	    min_scores_d2_vars[k2] = metric
+	    min_scores_d1_vars[k1] = metric
+	    mappers[k2] = mapper
     return output, mappers
 
 
