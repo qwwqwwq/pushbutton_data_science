@@ -52,7 +52,6 @@ def combine_dfs(dfs, use_labels=False):
 	name_map, data_map = best_mapping(df1, df2)
 	for k,v in data_map.iteritems():
 	    if use_labels and (k in df1): continue
-	    if len(Counter(df2[k])) == len(Counter(df1[name_map[k]])):
 #		print "------------------------------------------------------------"
 #		print len(Counter(df2[k])) < (len(df2[k])/2) and len(Counter(df1[name_map[k]])) < (len(df1[name_map[k]])/2)
 #		print len(Counter(df2[k])), len(df2[k])
@@ -61,25 +60,28 @@ def combine_dfs(dfs, use_labels=False):
 #		print v
 #		print df2[k]
 #		print df1[name_map[k]]
-		df2[k] = df2[k].apply(lambda x: v[x])
-	    else:
-		name_map[k] = k
+	    df2[k] = df2[k].apply(lambda x: v[x])
 	for k in name_map.keys():
 	    if args.use_labels and (k in df1):
-		name_map[k] = k
-	print name_map
+		del name_map[k]
+##TODO concatentaion is all messed up
+	print df2
+	df2 = df2[name_map.keys()]
 	df2.rename( columns=name_map, inplace=True)
-	df1.to_csv("test1")
-	df2.to_csv("test2")
+	print name_map
+	print df2
 
-	dfs.append(pandas.concat([df1, df2]))
+	df2.describe()
+	df1.describe()
+	dfs.append(pandas.concat([df1, df2], keys = args.filenames))
     print name_map
     return dfs.pop()
 
 if __name__ == '__main__':
     dfs=[]
     for fn in args.filenames:
-	dfs.append( pandas.io.parsers.read_csv(fn) )
+	dfs.append( pandas.io.parsers.read_csv(fn, sep=None) )
+	print dfs[-1].describe()
     if args.coerce_numeric:
 	for df in dfs:
 	    coerce_numeric_series(df)
