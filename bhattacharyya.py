@@ -1,4 +1,5 @@
 import math
+import heapq
 import random
 import re
 from itertools import permutations, izip_longest
@@ -127,6 +128,13 @@ def bc_discrete_best(v1,v2):
     else:
 	return m, pairing
 
+class Mapping(object):
+    def __init__(self, k1, k2, bc):
+	self.k1 = k1
+	self.k2 = k2
+	self.bc = bc
+    def __lt__(self, other):
+	return self.bc < other.bc
 
 def best_mapping(a,b):
     """
@@ -139,36 +147,39 @@ def best_mapping(a,b):
 	A mapping of discrete category names for data series in b to the category names
 	used in the corresponding data series in a (dict).
     """
-    d = defaultdict(dict)
-    c = defaultdict(dict)
+    d_heap = []
+    c_heap = []
     for (k1,v1) in a.iteritems():
 	for (k2,v2) in b.iteritems():
 	    if not is_discrete(v1) and not is_discrete(v2):
-		c[k1][k2] = bc_continuous(v1,v2)
+		bc = bc_continuous(v1,v2)
+		heapq.heappush(c_heap, (bc, k1, k2))
 	    elif is_discrete(v1) and is_discrete(v2):
-		d[k1][k2] = bc_discrete_best(v1,v2)
+		bc, mapper = bc_discrete_best(v1,v2)
+		heapq.heappush(d_heap, (bc, mapper, k1, k2))
     output = {}
-    min_scores_d2_vars = defaultdict(lambda: Inf)
-    min_scores_d1_vars = defaultdict(lambda: Inf)
     mappers = {}
-    for k1 in c:
-	print k1
-	k2, metric = min(c[k1].items(), key = lambda x: x[1])
-	print k2
-	print c[k1].items()
-	if metric < min_scores_d2_vars[k2] and metric < min_scores_d1_vars[k1]:
+    seen1 = set()
+    seen2 = set()
+    while c_heap:
+	bc, k1, k2 = heapq.heappop(c_heap)
+	if k1 in seen1 or k2 in seen2: 
+	    continue
+	else:
 	    output[k2] = k1
-	    min_scores_d2_vars[k2] = metric
-	    min_scores_d1_vars[k1] = metric
-    for k1 in d:
-	top = min(d[k1].items(), key = lambda x: x[1][0])
-	k2 = top[0]
-	mapper = top[1][1]
-	if metric < min_scores_d2_vars[k2] and metric < min_scores_d1_vars[k1]:
+	    seen1.add(k1)
+	    seen2.add(k2)
+    seen1 = set()
+    seen2 = set()
+    while d_heap:
+	bc, mapper, k1, k2 = heapq.heappop(d_heap)
+	if k1 in seen1 or k2 in seen2: 
+	    continue
+	else:
 	    output[k2] = k1
-	    min_scores_d2_vars[k2] = metric
-	    min_scores_d1_vars[k1] = metric
 	    mappers[k2] = mapper
+	    seen1.add(k1)
+	    seen2.add(k2)
     return output, mappers
 
 

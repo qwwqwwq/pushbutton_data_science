@@ -14,6 +14,8 @@ parser.add_argument('--use-labels', dest='use_labels',action='store_true', defau
     help="Don't examine two dataseries if they have the same name, assume they are the same.")
 parser.add_argument('--coerce-numeric', dest='coerce_numeric',action='store_true', default=False,
     help="If a series contains strings which appear to be numeric, coerce to a numeric series.")
+parser.add_argument('--unify-categorical', dest='unify_categorical',action='store_true', default=True,
+    help="Modify cateorical variable names based on relative frequency so that the same set of categorical variable names is used in all datasets.")
 parser.add_argument('--outfile', dest='outfile', type=str, required = True,
     help="Output csv.")
 args = parser.parse_args()
@@ -44,7 +46,22 @@ def coerce_numeric_series(df):
 		print key, "made numeric"
 		df[key] = coerced
 
-def combine_dfs(dfs, use_labels=False):
+def enforce_existing_label_mapping(mapper, S2):
+    remove = []
+    S2 = set(S2)
+    for k,v in mapper.iteritems():
+	try:
+	    if k in S2 and k != v:
+		remove.append(k)
+	except Exception as e:
+	    if k is np.nan:
+		remove.append(k)
+    print remove
+    for k in remove:
+	mapper[k] = k
+    return mapper
+
+def combine_dfs(dfs, use_labels=False, unify_categorical=False):
     dfs.sort(key = lambda x: len(x.index) )
     while len(dfs) > 1:
 	df1 = dfs.pop(0)
@@ -60,12 +77,14 @@ def combine_dfs(dfs, use_labels=False):
 #		print v
 #		print df2[k]
 #		print df1[name_map[k]]
-	    df2[k] = df2[k].apply(lambda x: v[x])
+	    if len(Counter(df1[name_map[k]])) == len(Counter(df2[k])) and unify_categorical:
+		v = enforce_existing_label_mapping(v, df2[k])
+		print v
+		df2[k] = df2[k].apply(lambda x: v.setdefault(x, x) )
 	for k in name_map.keys():
 	    if args.use_labels and (k in df1):
 		del name_map[k]
 ##TODO concatentaion is all messed up
-	print df2
 	df2 = df2[name_map.keys()]
 	df2.rename( columns=name_map, inplace=True)
 	print name_map
@@ -74,7 +93,6 @@ def combine_dfs(dfs, use_labels=False):
 	df2.describe()
 	df1.describe()
 	dfs.append(pandas.concat([df1, df2], keys = args.filenames))
-    print name_map
     return dfs.pop()
 
 if __name__ == '__main__':
@@ -85,4 +103,4 @@ if __name__ == '__main__':
     if args.coerce_numeric:
 	for df in dfs:
 	    coerce_numeric_series(df)
-    combine_dfs(dfs, use_labels = args.use_labels ).to_csv(args.outfile, index=False)
+    combine_dfs(dfs, use_labels = args.use_labels, unify_categorical = args.unify_categorical ).to_csv(args.outfile, index=False)
