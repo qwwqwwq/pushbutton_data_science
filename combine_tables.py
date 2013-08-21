@@ -40,10 +40,8 @@ def coerce_numeric_series(df):
 	    coerced = df[key].apply(coerce_numeric)
 	    coerced = coerced.astype(float)
 	    if coerced.count() < (len(coerced) * float(0.50)):
-		print key, "failed to be made numeric", coerced.count(), len(coerced)
 		continue
 	    else:
-		print key, "made numeric"
 		df[key] = coerced
 
 def enforce_existing_label_mapping(mapper, S2):
@@ -56,7 +54,6 @@ def enforce_existing_label_mapping(mapper, S2):
 	except Exception as e:
 	    if k is np.nan:
 		remove.append(k)
-    print remove
     for k in remove:
 	mapper[k] = k
     return mapper
@@ -69,26 +66,16 @@ def combine_dfs(dfs, use_labels=False, unify_categorical=False):
 	name_map, data_map = best_mapping(df1, df2)
 	for k,v in data_map.iteritems():
 	    if use_labels and (k in df1): continue
-#		print "------------------------------------------------------------"
-#		print len(Counter(df2[k])) < (len(df2[k])/2) and len(Counter(df1[name_map[k]])) < (len(df1[name_map[k]])/2)
-#		print len(Counter(df2[k])), len(df2[k])
-#		print len(Counter(df1[name_map[k]])),  (len(df1[name_map[k]])/2)
-#		print k
-#		print v
-#		print df2[k]
-#		print df1[name_map[k]]
 	    if len(Counter(df1[name_map[k]])) == len(Counter(df2[k])) and unify_categorical:
 		v = enforce_existing_label_mapping(v, df2[k])
-		print v
 		df2[k] = df2[k].apply(lambda x: v.setdefault(x, x) )
 	for k in name_map.keys():
 	    if args.use_labels and (k in df1):
 		del name_map[k]
-##TODO concatentaion is all messed up
 	df2 = df2[name_map.keys()]
 	df2.rename( columns=name_map, inplace=True)
+	print "Attribute mapping:"
 	print name_map
-	print df2
 
 	df2.describe()
 	df1.describe()
@@ -99,6 +86,7 @@ if __name__ == '__main__':
     dfs=[]
     for fn in args.filenames:
 	dfs.append( pandas.io.parsers.read_csv(fn, sep=None) )
+	print "Description of {fn}".format(fn=fn)
 	print dfs[-1].describe()
     if args.coerce_numeric:
 	for df in dfs:
