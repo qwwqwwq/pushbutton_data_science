@@ -55,20 +55,44 @@ def bc_continuous(d1, d2):
 
 def bc_discrete(count1, count2):
     keys = set(count1.keys()).union( set(count2.keys()) )
+    a = sum(count1.values())
+    b = sum(count2.values())
     metric = 0
     for key in keys:
 	if key not in count1: 
 	    p = 0
 	else: 
-	    p = count1[key]/float(len(a))
+	    p = count1[key]/float(a)
 	if key not in count2:
 	    q = 0
 	else: 
-	    q = count2[key]/float(len(b))
+	    q = count2[key]/float(b)
 	metric += math.sqrt( p*q )
     if metric != 0.0:
 	return -1*math.log(metric)
     else: return Inf
+
+def bc_discrete_w(count1, w1, count2, w2):
+    keys = set(count1.keys()).union( set(count2.keys()) )
+    count1 = { k: (v/w1) for (k,v) in count1.iteritems() }
+    count2 = { k: (v/w2) for (k,v) in count2.iteritems() }
+    a = sum(count1.values())
+    b = sum(count2.values())
+    metric = 0
+    for key in keys:
+	if key not in count1: 
+	    p = 0
+	else: 
+	    p = count1[key]/float(a)
+	if key not in count2:
+	    q = 0
+	else: 
+	    q = count2[key]/float(b)
+	metric += math.sqrt( p*q )
+    if metric != 0.0:
+	return -1*math.log(metric)
+    else: return Inf
+
 
 def bc_discrete_map(count1, count2, map):
     """

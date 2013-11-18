@@ -2,16 +2,19 @@ import scipy.stats
 from collections import Counter, defaultdict
 import string
 import sys
+from bhattacharyya import bc_discrete_w
 
 class DetermineHeader(object):
     """
     Determine if the first line of a tabular like file is a header
     based on the character frequencies in each line of the file.
     """
-    def __init__(self, file):
+    def __init__(self, file, sample_size = 100):
+	self.sample_size = sample_size
 	self.other_line_freqs = defaultdict(lambda: 0)
 	self.first_line_freqs = defaultdict(lambda: 0)
 	self.num_lines = 0
+	self.bcs = []
 	## allow file_paths and open files as input
 	if hasattr(file, 'read'):
 	    self.process_file(file.read())
@@ -20,26 +23,34 @@ class DetermineHeader(object):
 		self.process_file(f.read())
 
     def process_file(self, data):
-	f = ( line for line in data.splitlines() )
-	first_line = f.next()
-	self.update_freqs(self.first_line_freqs, first_line)
-	for line in f:
-	    self.update_freqs(self.other_line_freqs, line)
-	    self.num_lines += 1
+	f = [ line for (idx,line) in enumerate(data.splitlines()) if idx < self.sample_size ]
+	print f
+	self.num_lines = len(f)
+	for idx, line in enumerate(f):
+	    first_line_freqs = defaultdict(lambda: 0)
+	    other_line_freqs = defaultdict(lambda: 0)
+	    line = f[idx]
+	    self.update_freqs(first_line_freqs, line)
+	    for idx2,line in enumerate(f):
+		if idx2 != idx:
+		    self.update_freqs(other_line_freqs, line)
+	    if idx == 0:
+		self.first_metric = bc_discrete_w(first_line_freqs, 1, other_line_freqs, (self.num_lines - 1))
+		print self.first_metric
+	    self.bcs.append(bc_discrete_w(first_line_freqs, 1, other_line_freqs, (self.num_lines - 1)))
+	print self.bcs
+	self.bcs.sort()
+	print self.bcs
 
     def update_freqs(self, dest, line):
 	for char, appearances in Counter(line).iteritems():
 	    dest[char] += appearances
 
     def is_first_line_a_header(self):
-	zero_in_both = [ x for x in string.printable if not (self.first_line_freqs[x] or self.other_line_freqs[x]) ] 
-	first_line_vec = [ self.first_line_freqs[x] for x in string.printable if x not in zero_in_both ]
-	other_line_vec = [ self.other_line_freqs[x]/float(self.num_lines) for x in string.printable if x not in zero_in_both ]
-	chisq, P = scipy.stats.chisquare( first_line_vec, other_line_vec )
-	## if P meets significance, first line has significantly
-	## different character frequencies and is likely a header
-	if P < 0.05: return 1
-	else: return 0
+	print self.bcs.index(self.first_metric)
+	if self.bcs.index(self.first_metric) >= ((len(self.bcs)-1) * 0.95): return True
+	else: return False
+
 
 if __name__ == '__main__':
     import argparse
