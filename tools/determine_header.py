@@ -32,7 +32,7 @@ class DetermineHeader(object):
 	    dest[char] += appearances
 
     def is_first_line_a_header(self):
-	zero_in_both = [ x for x in string.printable if not (self.first_line_freqs[x] and self.other_line_freqs[x]) ] 
+	zero_in_both = [ x for x in string.printable if not (self.first_line_freqs[x] or self.other_line_freqs[x]) ] 
 	first_line_vec = [ self.first_line_freqs[x] for x in string.printable if x not in zero_in_both ]
 	other_line_vec = [ self.other_line_freqs[x]/float(self.num_lines) for x in string.printable if x not in zero_in_both ]
 	chisq, P = scipy.stats.chisquare( first_line_vec, other_line_vec )
